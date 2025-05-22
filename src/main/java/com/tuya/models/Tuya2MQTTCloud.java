@@ -16,8 +16,12 @@ public class Tuya2MQTTCloud {
         return expireTime;
     }
 
-    public String getPassword() {
-        return password;
+    public void setExpireTime(long expireTime) {
+        this.expireTime = String.valueOf(expireTime);
+    }
+
+    public char[] getPassword() {
+        return password.toCharArray();
     }
 
     public Topic getTopic() {
@@ -33,13 +37,13 @@ public class Tuya2MQTTCloud {
     }
 
     public class Topic {
-       DevId devId;
+        DevId devId;
 
         public DevId getDevId() {
             return devId;
         }
 
-        private class DevId {
+        public class DevId {
             String pub = "";
             String  sub = "";
 
@@ -47,8 +51,8 @@ public class Tuya2MQTTCloud {
                 return pub;
             }
 
-            public String getSub() {
-                return sub;
+            public String getSub(Tuya2MQTTDevices device) {
+                return sub.replace("{devId}", device.getId());
             }
         }
     }

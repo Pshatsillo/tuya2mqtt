@@ -7,6 +7,8 @@ import com.tuya.api.Tuya2MQTTApi;
 import com.tuya.models.Tuya2MQTTHomes;
 import io.github.shashankn.qrterminal.QRCode;
 import org.eclipse.paho.client.mqttv3.IMqttClient;
+import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
+import org.eclipse.paho.client.mqttv3.MqttCallback;
 import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
@@ -72,7 +74,7 @@ public class Tuya2MQTTMain {
                     }
                     System.out.println("Usercode is: " + userCode + " [Y/N]:");
                     yn = in.next();
-                    if ((yn.equals("Y")) || (yn.equals("y"))) {
+                    if ((yn.equals("Y")) || (yn.equals("y") )|| (yn.isEmpty())) {
                         config.setClientId(userCode);
                         String json = gson.toJson(config);
                         Files.write(configJsonFile, json.getBytes());
@@ -81,26 +83,51 @@ public class Tuya2MQTTMain {
                     userCode = "";
                 }
             }
-            publisher = new MqttClient("tcp://"+config.getMqttServer()+":"+config.getMqttPort(),publisherId);
-            MqttConnectOptions options = new MqttConnectOptions();
-            options.setAutomaticReconnect(true);
-            options.setCleanSession(true);
-            options.setConnectionTimeout(10);
-            publisher.connect(options);
             if(config.getTokensObj().isEmpty()){
                 auth();
             }
-            if(publisher.isConnected()) {
-                MqttMessage message = new MqttMessage("Online".getBytes());
-                message.setQos(qos);
-                publisher.publish(config.getMqttTopic() + "/status", message);
+            try {
+                publisher = new MqttClient("tcp://" + config.getMqttServer() + ":" + config.getMqttPort(), publisherId);
+                MqttConnectOptions options = new MqttConnectOptions();
+                options.setAutomaticReconnect(true);
+                options.setCleanSession(true);
+                options.setConnectionTimeout(10);
+                publisher.connect(options);
+                if (publisher.isConnected()) {
+                    MqttMessage message = new MqttMessage("Online".getBytes());
+                    message.setQos(qos);
+                    publisher.publish(config.getMqttTopic() + "/status", message);
+                    publisher.setCallback(new MqttCallback() {
+
+                        @Override
+                        public void connectionLost(Throwable throwable) {
+
+                        }
+
+                        @Override
+                        public void messageArrived(String s, MqttMessage mqttMessage) throws Exception {
+                            System.out.println("topic: " + s);
+                            System.out.println("message content: " + new String(mqttMessage.getPayload()));
+                            api.sendCommand(s, new String(mqttMessage.getPayload()));
+                        }
+
+                        @Override
+                        public void deliveryComplete(IMqttDeliveryToken iMqttDeliveryToken) {
+
+                        }
+                    });
+                }
+            }catch (Exception e){
+                logger.error("MQTT Error: {}", e.getLocalizedMessage());
             }
             while (true){
                 api.refreshToken();
-                Map<String, Tuya2MQTTHomes> homes = api.getHomes(publisher);
-                homes.forEach((k,v) -> {
-                    api.getDevices(v.getOwnerId());
-                });
+                if(publisher.isConnected()) {
+                    Map<String, Tuya2MQTTHomes> homes = api.getHomes(publisher);
+                    homes.forEach((k, v) -> {
+                        api.getDevices(v.getOwnerId());
+                    });
+                }
                 Thread.sleep(1000 * 60);
             }
         } catch (Exception e){
@@ -119,21 +146,21 @@ public class Tuya2MQTTMain {
 
     private static void auth() {
         try {
-        System.out.println("It seems you do not logged in to Tuya via Smart Life app.");
-        System.out.println("Please open app, press \"+\" button and click 'scan' to scan qr code. Then press ENTER");
-        System.in.read();
-        String qr = api.genQrCode(config.getClientId());
-        System.out.print(QRCode.from("tuyaSmart--qrLogin?token="+ qr).generate());
-        System.out.print(QRCode.from("tuyaSmart--qrLogin?token="+qr).generateHalfBlock());
-        System.out.println("Waiting 10 seconds");
-        Thread.sleep(10000);
-        if(api.login(config.getClientId(), qr)){
-            tokens = api.getTokens();
-            System.out.print(tokens.toString());
-            config.setTokensObj(tokens.toString());
-            String json = gson.toJson(config);
-            Files.write(configJsonFile, json.getBytes());
-        }
+            System.out.println("It seems you do not logged in to Tuya via Smart Life app.");
+            System.out.println("Please open app, press \"+\" button and click 'scan' to scan qr code. Then press ENTER");
+            System.in.read();
+            String qr = api.genQrCode(config.getClientId());
+            System.out.print(QRCode.from("tuyaSmart--qrLogin?token="+ qr).generate());
+            System.out.print(QRCode.from("tuyaSmart--qrLogin?token="+qr).generateHalfBlock());
+            System.out.println("Waiting 10 seconds");
+            Thread.sleep(10000);
+            if(api.login(config.getClientId(), qr)){
+                tokens = api.getTokens();
+                System.out.print(tokens.toString());
+                config.setTokensObj(tokens.toString());
+                String json = gson.toJson(config);
+                Files.write(configJsonFile, json.getBytes());
+            }
         } catch (IOException | URISyntaxException | InterruptedException e) {
             logger.error("Auth error, IOException or URISyntaxException or InterruptedException: {}", e.getLocalizedMessage());
         } catch (WriterException e) {
